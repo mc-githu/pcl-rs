@@ -1,51 +1,53 @@
-PCL-RS 运行说明
-================
+PCL-RS 0.1.0（Windows x64）
+===========================
 
-这是一个用 Rust 重写的 Minecraft 启动器（PCL 风格）。本包含命令行版本 pcl.exe。
+用 Rust 重写的 Minecraft 启动器。本包含两个可执行文件：
 
-快速开始
+  PCL-RS-GUI.exe   图形界面版（Tauri 2 + WebView2）   ← 普通用户用这个
+  pcl.exe          命令行版（脚本 / 排障 / 自动化）
+
+图形界面版
+----------
+双击 PCL-RS-GUI.exe 即可。左侧导航：主页 / 下载 / 实例 / Mod / 设置。
+
+  主页    选择已安装版本与账户，点「启动游戏」，下方实时显示游戏日志
+  下载    版本列表（可勾选快照），点「安装」，顶部显示下载进度
+  实例    已安装版本、完整性校验、补全缺失文件
+  Mod     搜索 Modrinth / CurseForge 并下载到 mods 目录
+  设置    游戏目录、最大内存、窗口尺寸、下载线路、CurseForge Key、Java 路径
+
+首次使用建议顺序：设置 → 选游戏目录 → 下载 → 安装一个版本 → 主页 → 启动。
+
+命令行版
 --------
-1) 安装版本（默认 BMCLAPI CDN 加速，失败自动回退官方源）
+  pcl.exe install 1.20.1                 安装（CDN 加速 + 官方回退）
+  pcl.exe install 1.20.1 --dry-run       只打印下载计划
+  pcl.exe launch 1.20.1 --memory 4096    启动（缺失文件自动补全）
+  pcl.exe verify 1.20.1                  校验完整性（SHA-1）
+  pcl.exe java                           列出本机 Java
+  pcl.exe account offline Steve          创建离线账户
+  pcl.exe account ms                     微软设备码登录
+  pcl.exe mods search sodium --version 1.20.1 --loader fabric
 
-   pcl.exe install 1.20.1
+  通用选项
+    --dir <目录>     游戏目录（默认 %APPDATA%\.minecraft）
+    --source cn      线路：cn = CDN 优先 / global = 官方优先 / official = 仅官方
+    --dry-run        只打印计划或启动命令行
+    --quiet          不显示进度条
 
-2) 启动游戏（缺失文件自动补全，离线账户直接开始）
-
-   pcl.exe launch 1.20.1 --username Steve --memory 4096
-
-3) 只想看会下载什么，不实际下载
-
-   pcl.exe install 1.20.1 --dry-run
-
-常用命令
---------
-   pcl.exe list                     列出可安装版本
-   pcl.exe list --installed         列出本机已安装版本
-   pcl.exe info 1.20.1              版本详情（主类 / Java 要求 / 待下载体积）
-   pcl.exe java                     列出本机 Java
-   pcl.exe verify 1.20.1            校验完整性（SHA-1）
-   pcl.exe account offline Steve    创建离线账户
-   pcl.exe account ms               微软账户登录（设备码）
-   pcl.exe mods search sodium --version 1.20.1 --loader fabric
-   pcl.exe mods download sodium --version 1.20.1 --loader fabric
-
-选项
-----
-   --dir <目录>     指定游戏目录（默认 %APPDATA%\.minecraft）
-   --source cn      下载线路：cn = CDN 优先 / global = 官方优先 / official = 仅官方
-   --dry-run        只打印计划或启动命令行
-   --quiet          不显示进度条
-
-说明
-----
-* 游戏本体与资源不随本包分发，运行时从官方源或授权 CDN 镜像下载。
+说明与注意事项
+--------------
+* 本体与资源不随本包分发，运行时从官方源或授权 CDN 镜像（BMCLAPI）下载，
+  每个文件落地前校验 SHA-1，支持断点续传；失败自动切换线路。
+* 图形界面版需要 WebView2 运行时。Windows 11 与大多数 Windows 10 自带；
+  若提示缺少，安装 Microsoft Edge WebView2 Runtime 即可。
 * 微软登录需要自己的 Azure 应用 ID（公共客户端 + 启用设备代码流），
   通过环境变量 PCL_MS_CLIENT_ID 传入；本包不内置共享 client id。
-* CurseForge 搜索/下载需要免费 API Key：
-  设置环境变量 PCL_CURSEFORGE_KEY，或命令行 --api-key。
-* 本机为 Intel HD 4000 / NVIDIA NVS 5400M（2012 年前后平台）。
-  Minecraft 1.20+ 需要 OpenGL 3.2，若启动即崩溃（退出码 0xC0000005），
-  先更新显卡驱动，或在 1.16.5 及更早版本上测试。
+* CurseForge 搜索/下载需要免费 API Key（https://console.curseforge.com/），
+  在设置页填写，或给命令行设置 PCL_CURSEFORGE_KEY。
+* 若游戏启动即崩溃（退出码 -1073741819 / 0xC0000005），多为显卡 OpenGL
+  版本不足：Minecraft 1.20+ 需要 OpenGL 3.2。本机为 Intel HD 4000 +
+  NVIDIA NVS 5400M（2012 年前后平台），建议更新驱动或先试 1.16.5。
 
 许可与署名
 ----------
