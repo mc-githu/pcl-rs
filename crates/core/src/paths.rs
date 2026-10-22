@@ -119,17 +119,31 @@ impl GamePaths {
 mod tests {
     use super::*;
 
+    /// Built with `join` so the assertions hold on every platform.
     #[test]
     fn layout_matches_vanilla() {
-        let p = GamePaths::new(r"C:\mc");
+        let root = PathBuf::from("mc");
+        let p = GamePaths::new(root.clone());
+
         assert_eq!(
             p.version_json("1.20.1"),
-            Path::new(r"C:\mc\versions\1.20.1\1.20.1.json")
+            root.join("versions").join("1.20.1").join("1.20.1.json")
+        );
+        assert_eq!(
+            p.version_jar("1.20.1"),
+            root.join("versions").join("1.20.1").join("1.20.1.jar")
         );
         assert_eq!(
             p.object_file("abcdef0123"),
-            Path::new(r"C:\mc\assets\objects\ab\abcdef0123")
+            root.join("assets").join("objects").join("ab").join("abcdef0123")
         );
-        assert_eq!(p.index_file("5"), Path::new(r"C:\mc\assets\indexes\5.json"));
+        assert_eq!(
+            p.index_file("5"),
+            root.join("assets").join("indexes").join("5.json")
+        );
+        assert_eq!(
+            p.natives_dir("1.20.1"),
+            root.join("versions").join("1.20.1").join("natives")
+        );
     }
 }

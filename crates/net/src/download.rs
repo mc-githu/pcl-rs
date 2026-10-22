@@ -469,8 +469,12 @@ mod tests {
 
     #[test]
     fn part_path_appends_suffix() {
-        let p = part_path(Path::new(r"C:\mc\assets\objects\ab\abcd"));
-        assert_eq!(p, PathBuf::from(r"C:\mc\assets\objects\ab\abcd.part"));
+        let dir = PathBuf::from("mc")
+            .join("assets")
+            .join("objects")
+            .join("ab");
+        let dest = dir.join("abcd");
+        assert_eq!(part_path(&dest), dir.join("abcd.part"));
     }
 
     #[test]
