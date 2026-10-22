@@ -1,6 +1,7 @@
-/* PCL-RS 前端逻辑。
- * 通过 Tauri 的全局 API 调用 Rust 命令；在纯浏览器中打开时退化为演示数据，
- * 方便快速检查界面布局。 */
+/* PCL-RS 前端。
+ * 布局参考 PCL：左侧导航 + 页面内分栏；下载页统一承载「游戏本体 / Mod / …」，
+ * Mod 搜索必须先选定实例（用它的 MC 版本与加载器过滤）。
+ * 在浏览器中直接打开时会退化为演示数据，便于调整界面。 */
 
 const tauri = window.__TAURI__;
 const invoke = tauri?.core?.invoke ?? demoInvoke;
@@ -15,46 +16,78 @@ const logLine = (line) => {
   view.scrollTop = view.scrollHeight;
   if (view.textContent.length > 200_000) view.textContent = view.textContent.slice(-150_000);
 };
+const mb = (bytes) => (bytes / 1048576).toFixed(1);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-let settings = null;
-let accounts = [];
-let selectedAccount = null;
+const state = {
+  settings: null,
+  accounts: [],
+  instances: [],
+  selected: null, // { id, gameVersion, loader }
+  versions: [],
+  versionsLoaded: false,
+};
 
+/* ------------------------------------------------------------------ 导航 */
 document.querySelectorAll(".nav-item").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b === btn));
     const page = btn.dataset.page;
     document.querySelectorAll(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
-    if (page === "download") loadVersions();
-    if (page === "instances") loadInstalled();
+    if (page === "download") {
+      loadVersions();
+      renderModScope();
+    }
+    if (page === "instances") loadInstances();
+    if (page === "online") refreshTerracotta();
     if (page === "settings") fillSettings();
   });
 });
 
-async function loadSettings() {
-  settings = await invoke("get_settings");
-  $("statusSource").textContent = `线路: ${sourceLabel(settings.source)}`;
-}
+document.querySelectorAll("#downloadSubnav .subnav-item").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#downloadSubnav .subnav-item").forEach((b) => b.classList.toggle("active", b === btn));
+    const sub = btn.dataset.sub;
+    const isPlaceholder = !["game", "mod"].includes(sub);
+    document.querySelectorAll(".subpage").forEach((p) => p.classList.remove("active"));
+    if (isPlaceholder) {
+      $("placeholderTitle").textContent = btn.textContent.trim();
+      $("sub-placeholder").classList.add("active");
+    } else {
+      $(`sub-${sub}`).classList.add("active");
+    }
+    if (sub === "mod") renderModScope();
+    if (sub === "game") loadVersions();
+  });
+});
 
+/* ------------------------------------------------------------------ 设置 */
 function sourceLabel(source) {
   return { cn: "BMCLAPI → 官方", global: "官方 → BMCLAPI", official: "仅官方" }[source] ?? source;
 }
 
+async function loadSettings() {
+  state.settings = await invoke("get_settings");
+  $("statusSource").textContent = `线路: ${sourceLabel(state.settings.source)}`;
+}
+
 function fillSettings() {
-  if (!settings) return;
-  $("setGameDir").value = settings.gameDir ?? "";
-  $("setMemory").value = settings.memoryMb ?? 4096;
-  $("setWidth").value = settings.width ?? 854;
-  $("setHeight").value = settings.height ?? 480;
-  $("setFullscreen").checked = Boolean(settings.fullscreen);
-  $("setSource").value = settings.source ?? "cn";
-  $("setCfKey").value = settings.curseforgeKey ?? "";
-  $("setJavaPath").value = settings.javaPath ?? "";
+  const s = state.settings;
+  if (!s) return;
+  $("setGameDir").value = s.gameDir ?? "";
+  $("setMemory").value = s.memoryMb ?? 4096;
+  $("setWidth").value = s.width ?? 854;
+  $("setHeight").value = s.height ?? 480;
+  $("setFullscreen").checked = Boolean(s.fullscreen);
+  $("setSource").value = s.source ?? "cn";
+  $("setCfKey").value = s.curseforgeKey ?? "";
+  $("setJavaPath").value = s.javaPath ?? "";
 }
 
 $("saveSettings").addEventListener("click", async () => {
-  settings = {
-    ...settings,
+  state.settings = {
+    ...state.settings,
     gameDir: $("setGameDir").value.trim(),
     memoryMb: Number($("setMemory").value) || 4096,
     width: Number($("setWidth").value) || 854,
@@ -64,107 +97,173 @@ $("saveSettings").addEventListener("click", async () => {
     curseforgeKey: $("setCfKey").value.trim(),
     javaPath: $("setJavaPath").value.trim() || null,
   };
-  settings = await invoke("save_settings", { settings });
+  state.settings = await invoke("save_settings", { settings: state.settings });
   fillSettings();
-  $("statusSource").textContent = `线路: ${sourceLabel(settings.source)}`;
+  $("statusSource").textContent = `线路: ${sourceLabel(state.settings.source)}`;
   status("设置已保存");
+
+  // 目录可能变了：重新读取实例并重置选择
+  state.selected = null;
+  state.versionsLoaded = false;
+  await loadInstances();
+});
+
+$("browseGameDir").addEventListener("click", async () => {
+  const picked = await invoke("pick_game_dir");
+  if (picked) {
+    $("setGameDir").value = picked;
+    status(`已选择目录：${picked}（记得点「保存设置」）`);
+  }
+});
+
+$("defaultGameDir").addEventListener("click", async () => {
+  const dir = await invoke("default_game_dir");
+  if (dir) {
+    $("setGameDir").value = dir;
+    status(`已填入默认目录：${dir}（记得点「保存设置」）`);
+  }
 });
 
 $("scanJava").addEventListener("click", async () => {
   const list = await invoke("detect_java");
   $("javaList").innerHTML = list.length
-    ? list.map((j) => `<div class="java-item">Java ${j.major} · ${j.vendor ?? "未知厂商"} · ${j.arch} · ${j.display}</div>`).join("")
+    ? list.map((j) => `<div class="java-item">Java ${j.major} · ${esc(j.vendor ?? "未知厂商")} · ${esc(j.arch)} · ${esc(j.display)}</div>`).join("")
     : `<div class="java-item">未找到 Java，请安装 JDK 17 或 21</div>`;
 });
 
-async function loadInstalled() {
-  const installed = await invoke("list_installed");
-  const select = $("launchVersion");
-  const previous = select.value;
-  select.innerHTML = installed.length
-    ? installed.map((v) => `<option value="${v.id}">${v.id}${v.hasJar ? "" : "（缺少 jar）"}</option>`).join("")
-    : `<option value="">（尚未安装任何版本）</option>`;
-  if (previous && installed.some((v) => v.id === previous)) select.value = previous;
+/* ------------------------------------------------------------------ 实例 */
+async function loadInstances() {
+  state.instances = await invoke("list_installed");
 
-  $("instanceList").innerHTML = installed.length
-    ? installed
+  // 主页与下载页共用的选择器
+  const options = state.instances
+    .map((v) => `<option value="${esc(v.id)}">${esc(v.id)}${v.hasJar ? "" : "（缺少 jar）"}</option>`)
+    .join("");
+  $("launchVersion").innerHTML = options || `<option value="">（尚未安装任何版本）</option>`;
+  $("instanceSelect").innerHTML =
+    `<option value="">未选择</option>` + options;
+
+  const keep = state.selected?.id;
+  if (keep && state.instances.some((v) => v.id === keep)) {
+    $("instanceSelect").value = keep;
+    $("launchVersion").value = keep;
+  } else if (state.instances.length) {
+    $("instanceSelect").value = state.instances[0].id;
+    $("launchVersion").value = state.instances[0].id;
+    await selectInstance(state.instances[0].id);
+  } else {
+    state.selected = null;
+    renderModScope();
+  }
+
+  $("instanceList").innerHTML = state.instances.length
+    ? state.instances
         .map(
-          (v) => `<div class="version-item">
-            <span class="id">${v.id}</span>
+          (v, i) => `<div class="version-item enter" style="animation-delay:${i * 22}ms">
+            <span class="id">${esc(v.id)}</span>
             <span class="meta">${v.hasJar ? "客户端完整" : "缺少客户端 jar"}${v.javaMajor ? ` · 需要 Java ${v.javaMajor}` : ""}</span>
-            <button class="btn ghost" data-verify="${v.id}">校验</button>
-            <button class="btn" data-install="${v.id}">补全/更新</button>
+            <button class="btn ghost" data-verify="${esc(v.id)}">校验</button>
+            <button class="btn" data-install="${esc(v.id)}">补全</button>
+            <button class="btn ghost" data-pick="${esc(v.id)}">选为下载目标</button>
           </div>`
         )
         .join("")
-    : `<div class="version-item"><span class="meta">还没有安装任何版本，去「下载」页面安装一个吧</span></div>`;
+    : `<div class="empty"><div class="empty-icon">📦</div><p>还没有安装任何版本</p><p class="muted">去「下载 → 游戏本体」安装一个吧</p></div>`;
 
-  document.querySelectorAll("[data-verify]").forEach((btn) =>
+  bindInstallButtons($("instanceList"));
+  $("instanceList").querySelectorAll("[data-verify]").forEach((btn) =>
     btn.addEventListener("click", () => verifyVersion(btn.dataset.verify))
   );
-  document.querySelectorAll("[data-install]").forEach((btn) =>
-    btn.addEventListener("click", () => installVersion(btn.dataset.install))
+  $("instanceList").querySelectorAll("[data-pick]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      $("instanceSelect").value = btn.dataset.pick;
+      await selectInstance(btn.dataset.pick);
+      status(`下载目标已切换为 ${btn.dataset.pick}`);
+    })
   );
 }
 
-let versionsLoaded = false;
-async function loadVersions(force = false) {
-  if (versionsLoaded && !force) return;
-  status("正在获取版本清单…");
-  const includeSnapshots = $("showSnapshots").checked;
-  const versions = await invoke("list_versions", { includeSnapshots });
-  versionsLoaded = true;
-  renderVersions(versions);
-  status(`共 ${versions.length} 个版本`);
-  window.__versions = versions;
+async function selectInstance(id) {
+  if (!id) {
+    state.selected = null;
+    renderModScope();
+    return;
+  }
+  try {
+    const info = await invoke("version_info", { id });
+    state.selected = { id, gameVersion: info.gameVersion, loader: info.loader };
+  } catch (e) {
+    state.selected = { id, gameVersion: id, loader: "vanilla" };
+  }
+  renderModScope();
 }
 
-function renderVersions(versions) {
+$("instanceSelect").addEventListener("change", async (e) => {
+  await selectInstance(e.target.value);
+  if (e.target.value) $("launchVersion").value = e.target.value;
+});
+
+$("refreshInstalled").addEventListener("click", loadInstances);
+$("reloadInstances").addEventListener("click", loadInstances);
+
+/* ------------------------------------------------------------------ 版本列表 */
+async function loadVersions(force = false) {
+  if (state.versionsLoaded && !force) return;
+  status("正在获取版本清单…");
+  const versions = await invoke("list_versions", { includeSnapshots: $("showSnapshots").checked });
+  state.versions = versions;
+  state.versionsLoaded = true;
+  renderVersions();
+  status(`共 ${versions.length} 个版本`);
+}
+
+function renderVersions() {
   const filter = $("versionSearch").value.trim().toLowerCase();
-  const rows = versions.filter((v) => !filter || v.id.toLowerCase().includes(filter));
+  const rows = state.versions.filter((v) => !filter || v.id.toLowerCase().includes(filter));
+  if (!rows.length) {
+    $("versionList").innerHTML = `<div class="empty"><p>没有匹配的版本</p></div>`;
+    return;
+  }
   $("versionList").innerHTML = rows
     .map(
-      (v) => `<div class="version-item">
-        <span class="id">${v.id}</span>
+      (v, i) => `<div class="version-item enter" style="animation-delay:${Math.min(i, 20) * 18}ms">
+        <span class="id">${esc(v.id)}</span>
         <span class="badge ${v.kind === "release" ? "ok" : "warn"}">${v.kind === "release" ? "正式版" : "快照"}</span>
-        <span class="meta">${(v.releaseTime ?? "").slice(0, 10)}</span>
+        <span class="meta">${esc((v.releaseTime ?? "").slice(0, 10))}</span>
         ${v.installed ? `<span class="badge ok">已安装</span>` : ""}
-        <button class="btn ${v.installed ? "ghost" : "primary"}" data-install="${v.id}">${v.installed ? "补全" : "安装"}</button>
+        <button class="btn ${v.installed ? "ghost" : "primary"}" data-install="${esc(v.id)}">${v.installed ? "补全" : "安装"}</button>
       </div>`
     )
     .join("");
-  document.querySelectorAll("[data-install]").forEach((btn) =>
+  bindInstallButtons($("versionList"));
+}
+
+function bindInstallButtons(root) {
+  root.querySelectorAll("[data-install]").forEach((btn) =>
     btn.addEventListener("click", () => installVersion(btn.dataset.install))
   );
 }
 
-$("versionSearch").addEventListener("input", () => renderVersions(window.__versions ?? []));
+$("versionSearch").addEventListener("input", renderVersions);
 $("showSnapshots").addEventListener("change", () => {
-  versionsLoaded = false;
+  state.versionsLoaded = false;
   loadVersions(true);
 });
 $("reloadVersions").addEventListener("click", () => {
-  versionsLoaded = false;
+  state.versionsLoaded = false;
   loadVersions(true);
 });
-$("reloadInstances").addEventListener("click", loadInstalled);
-$("refreshInstalled").addEventListener("click", loadInstalled);
 
+/* ------------------------------------------------------------------ 下载进度 */
 listen("install-progress", (event) => {
   const p = event.payload;
-  const bar = $("dlBar");
-  const text = $("dlText");
   $("dlProgress").classList.remove("hidden");
-  bar.style.width = `${(p.fraction * 100).toFixed(1)}%`;
-  const mb = (bytes) => (bytes / 1048576).toFixed(1);
-  text.textContent = `${(p.fraction * 100).toFixed(1)}% · ${p.filesDone}/${p.filesTotal} 文件 · ${mb(p.bytesDone)}/${mb(p.bytesTotal)} MB ${p.current ? "· " + p.current : ""}`;
+  $("dlBar").style.width = `${(p.fraction * 100).toFixed(1)}%`;
+  $("dlText").textContent = `${(p.fraction * 100).toFixed(1)}% · ${p.filesDone}/${p.filesTotal} 文件 · ${mb(p.bytesDone)}/${mb(p.bytesTotal)} MB ${p.current ? "· " + p.current : ""}`;
 
-  const lbar = $("launchBar");
-  if (lbar) {
-    $("launchProgress").classList.remove("hidden");
-    lbar.style.width = bar.style.width;
-    $("launchText").textContent = text.textContent;
-  }
+  $("launchProgress").classList.remove("hidden");
+  $("launchBar").style.width = $("dlBar").style.width;
+  $("launchText").textContent = $("dlText").textContent;
 });
 
 async function installVersion(id) {
@@ -174,8 +273,9 @@ async function installVersion(id) {
     await invoke("install_version", { id, verify: false });
     status(`${id} 安装完成`);
     logLine(`[PCL-RS] ${id} 安装完成`);
-    await loadInstalled();
-    versionsLoaded = false;
+    await loadInstances();
+    state.versions = state.versions.map((v) => (v.id === id ? { ...v, installed: true } : v));
+    renderVersions();
   } catch (e) {
     status(`安装失败: ${e}`);
     logLine(`[错误] ${e}`);
@@ -186,7 +286,7 @@ async function installVersion(id) {
 async function verifyVersion(id) {
   status(`正在校验 ${id}…`);
   const bad = await invoke("verify_version", { id });
-  if (bad.length === 0) {
+  if (!bad.length) {
     status(`${id} 校验通过`);
   } else {
     status(`${id} 有 ${bad.length} 个文件损坏/缺失`);
@@ -194,6 +294,92 @@ async function verifyVersion(id) {
   }
 }
 
+/* ------------------------------------------------------------------ Mod（依赖所选实例） */
+function renderModScope() {
+  const hint = $("modScopeHint");
+  const filters = $("modFilters");
+
+  if (!state.selected) {
+    hint.className = "scoped-hint warn";
+    hint.textContent = "请先在右上角「目标实例」里选择一个已安装的版本——Mod 需要按它的游戏版本与加载器过滤。";
+    filters.innerHTML = "";
+    $("modSearch").disabled = true;
+    $("modList").innerHTML = `<div class="empty"><div class="empty-icon">🧩</div><p>尚未选择实例</p><p class="muted">选择后才能搜索与该版本兼容的 Mod</p></div>`;
+    return;
+  }
+
+  const { id, gameVersion, loader } = state.selected;
+  hint.className = "scoped-hint";
+  hint.textContent = `当前目标：${id} —— Mod 将下载到该实例的 mods 目录。`;
+  filters.innerHTML = `
+    <span class="chip">Minecraft ${esc(gameVersion)}</span>
+    <span class="chip">${esc(loader === "vanilla" ? "原版（无加载器）" : loader)}</span>
+    ${loader === "vanilla" ? `<span class="chip grey">原版实例通常装不了 Mod，建议先装 Fabric/Forge 实例</span>` : ""}
+  `;
+  $("modSearch").disabled = false;
+  if (!$("modList").dataset.filled) {
+    $("modList").innerHTML = `<div class="empty"><p class="muted">输入关键词搜索 Mod</p></div>`;
+  }
+}
+
+$("modSearch").addEventListener("click", async () => {
+  if (!state.selected) return;
+  const source = $("modSource").value;
+  const query = $("modQuery").value.trim();
+  status("正在搜索 Mod…");
+  $("modList").innerHTML = `<div class="empty"><p class="muted">搜索中…</p></div>`;
+  try {
+    const results = await invoke("search_mods", {
+      source,
+      query,
+      gameVersion: state.selected.gameVersion,
+      loader: state.selected.loader === "vanilla" ? null : state.selected.loader,
+      limit: 20,
+    });
+    $("modList").dataset.filled = "1";
+    $("modList").innerHTML = results.length
+      ? results
+          .map(
+            (m, i) => `<div class="version-item enter" style="animation-delay:${Math.min(i, 20) * 18}ms">
+              ${m.iconUrl ? `<img class="icon" src="${esc(m.iconUrl)}" alt="" loading="lazy" />` : `<span class="icon"></span>`}
+              <span class="id">${esc(m.name)}</span>
+              <span class="meta">${esc(m.summary ?? "")}</span>
+              <span class="badge grey">${esc(m.source)}</span>
+              <button class="btn primary" data-mod="${esc(m.id)}">下载</button>
+            </div>`
+          )
+          .join("")
+      : `<div class="empty"><p>没有找到兼容 ${esc(state.selected.gameVersion)} 的 Mod</p></div>`;
+
+    $("modList").querySelectorAll("[data-mod]").forEach((btn) =>
+      btn.addEventListener("click", () => downloadMod(source, btn.dataset.mod))
+    );
+    status(`找到 ${results.length} 个 Mod`);
+  } catch (e) {
+    $("modList").innerHTML = `<div class="empty"><p>搜索失败：${esc(e)}</p></div>`;
+    status(`搜索失败: ${e}`);
+  }
+});
+
+async function downloadMod(source, project) {
+  if (!state.selected) return;
+  status("正在解析并下载 Mod…");
+  try {
+    const dest = await invoke("download_mod", {
+      source,
+      project,
+      gameVersion: state.selected.gameVersion,
+      loader: state.selected.loader === "vanilla" ? null : state.selected.loader,
+    });
+    status(`已下载到 ${dest}`);
+    logLine(`[Mod] ${dest}`);
+  } catch (e) {
+    status(`下载失败: ${e}`);
+    logLine(`[错误] ${e}`);
+  }
+}
+
+/* ------------------------------------------------------------------ 启动 */
 $("launchBtn").addEventListener("click", async () => {
   const id = $("launchVersion").value;
   if (!id) {
@@ -205,14 +391,7 @@ $("launchBtn").addEventListener("click", async () => {
   status(`正在准备启动 ${id}…`);
   $("launchProgress").classList.remove("hidden");
   try {
-    const pid = await invoke("launch_game", {
-      id,
-      username,
-      memoryMb: null,
-      fullscreen: false,
-      width: null,
-      height: null,
-    });
+    const pid = await invoke("launch_game", { id, username, memoryMb: null, fullscreen: false, width: null, height: null });
     status(`游戏已启动 (PID ${pid})`);
     logLine(`[PCL-RS] 启动 ${id}，PID ${pid}`);
   } catch (e) {
@@ -230,19 +409,20 @@ listen("game-exit", (event) => {
 });
 listen("game-started", (event) => logLine(`[PCL-RS] 进程已创建，PID ${event.payload}`));
 
+/* ------------------------------------------------------------------ 账户 */
 async function loadAccounts() {
-  accounts = await invoke("list_accounts");
+  state.accounts = await invoke("list_accounts");
   const list = $("accountList");
-  list.innerHTML = accounts.length
-    ? accounts
+  list.innerHTML = state.accounts.length
+    ? state.accounts
         .map(
-          (a) => `<div class="account-item ${a.selected ? "selected" : ""}" data-uuid="${a.uuid}">
-            <span>${a.username}</span>
+          (a) => `<div class="account-item ${a.selected ? "selected" : ""}" data-uuid="${esc(a.uuid)}">
+            <span>${esc(a.username)}</span>
             <span class="kind">${a.kind === "microsoft" ? "微软" : "离线"}${a.expired ? " · 已过期" : ""}</span>
           </div>`
         )
         .join("")
-    : `<div class="account-item"><span>暂无账户，添加一个离线账户或用微软登录</span></div>`;
+    : `<div class="account-item"><span>暂无账户</span><span class="kind">添加离线或微软登录</span></div>`;
 
   list.querySelectorAll("[data-uuid]").forEach((el) =>
     el.addEventListener("click", async () => {
@@ -251,8 +431,8 @@ async function loadAccounts() {
     })
   );
 
-  selectedAccount = accounts.find((a) => a.selected) ?? accounts[0] ?? null;
-  $("accountChip").textContent = selectedAccount ? selectedAccount.username : "未登录";
+  const selected = state.accounts.find((a) => a.selected) ?? state.accounts[0] ?? null;
+  $("accountChip").textContent = selected ? selected.username : "未登录";
 }
 
 $("addOffline").addEventListener("click", async () => {
@@ -280,57 +460,91 @@ listen("ms-code", (event) => {
   const { userCode, verificationUri } = event.payload;
   const box = $("msCode");
   box.classList.remove("hidden");
-  box.innerHTML = `请在浏览器打开 <a href="${verificationUri}" target="_blank">${verificationUri}</a>，输入代码 <b>${userCode}</b>，完成后本窗口会自动继续。`;
+  box.innerHTML = `请打开 <a href="${esc(verificationUri)}" target="_blank">${esc(verificationUri)}</a>，输入代码 <b>${esc(userCode)}</b>，完成后本窗口会自动继续。`;
   status("等待在浏览器中完成登录…");
 });
 
-$("modSearch").addEventListener("click", async () => {
-  const source = $("modSource").value;
-  const query = $("modQuery").value.trim();
-  const gameVersion = $("modVersion").value.trim() || null;
-  const loader = $("modLoader").value || null;
-  status("正在搜索 Mod…");
-  try {
-    const results = await invoke("search_mods", { source, query, gameVersion, loader, limit: 20 });
-    $("modList").innerHTML = results.length
-      ? results
-          .map(
-            (m) => `<div class="version-item">
-              <span class="id">${m.name}</span>
-              <span class="meta">${m.summary ?? ""}</span>
-              <span class="badge">${m.source}</span>
-              <button class="btn primary" data-mod="${m.id}" data-source="${source}">下载</button>
-            </div>`
-          )
-          .join("")
-      : `<div class="version-item"><span class="meta">没有找到结果</span></div>`;
+/* ------------------------------------------------------------------ 联机（陶瓦） */
+let tcRunning = false;
 
-    document.querySelectorAll("[data-mod]").forEach((btn) =>
-      btn.addEventListener("click", () => downloadMod(btn.dataset.source, btn.dataset.mod))
-    );
-    status(`找到 ${results.length} 个 Mod`);
-  } catch (e) {
-    status(`搜索失败: ${e}`);
-  }
-});
-
-async function downloadMod(source, project) {
-  const gameVersion = $("modVersion").value.trim();
-  if (!gameVersion) {
-    status("请先填写 MC 版本");
-    return;
-  }
-  const loader = $("modLoader").value || null;
-  status("正在解析 Mod 文件…");
+async function refreshTerracotta() {
   try {
-    const dest = await invoke("download_mod", { source, project, gameVersion, loader });
-    status(`已下载到 ${dest}`);
-    logLine(`[Mod] ${dest}`);
+    const s = await invoke("terracotta_status");
+    tcRunning = s.running;
+    const badge = $("tcBadge");
+    if (s.running) {
+      badge.className = "badge ok";
+      badge.textContent = "运行中";
+    } else if (s.installed) {
+      badge.className = "badge";
+      badge.textContent = `已安装${s.version ? " v" + s.version : ""}`;
+    } else {
+      badge.className = "badge grey";
+      badge.textContent = "未安装";
+    }
+    $("tcInfo").innerHTML = `
+      <div><span>状态</span><b>${s.running ? "运行中" : s.installed ? "已就绪" : "未安装"}</b></div>
+      <div><span>版本</span><b>${esc(s.version ?? "-")}</b></div>
+      <div><span>路径</span><span>${esc(s.exe ?? s.dir)}</span></div>
+    `;
+    $("tcLaunch").disabled = !s.installed || s.running;
+    $("tcStop").disabled = !s.running;
   } catch (e) {
-    status(`下载失败: ${e}`);
+    $("tcBadge").className = "badge grey";
+    $("tcBadge").textContent = "检测失败";
+    logLine(`[联机] 状态检测失败: ${e}`);
   }
 }
 
+$("tcInstall").addEventListener("click", async () => {
+  $("tcProgress").classList.remove("hidden");
+  $("tcBar").style.width = "8%";
+  $("tcText").textContent = "正在准备…";
+  $("tcInstall").disabled = true;
+  try {
+    const r = await invoke("install_terracotta");
+    $("tcBar").style.width = "100%";
+    $("tcText").textContent = `安装完成：${r.asset}（v${r.version}）`;
+    status(`陶瓦联机 v${r.version} 安装完成`);
+    await refreshTerracotta();
+  } catch (e) {
+    $("tcText").textContent = `安装失败：${e}`;
+    status(`陶瓦联机安装失败: ${e}`);
+  } finally {
+    $("tcInstall").disabled = false;
+  }
+});
+
+$("tcLaunch").addEventListener("click", async () => {
+  try {
+    const pid = await invoke("launch_terracotta");
+    status(`陶瓦联机已启动 (PID ${pid})`);
+    logLine(`[联机] 陶瓦联机已启动，PID ${pid}`);
+    setTimeout(refreshTerracotta, 800);
+  } catch (e) {
+    status(`启动失败: ${e}`);
+  }
+});
+
+$("tcStop").addEventListener("click", async () => {
+  try {
+    await invoke("stop_terracotta");
+    status("陶瓦联机已停止");
+    setTimeout(refreshTerracotta, 400);
+  } catch (e) {
+    status(`停止失败: ${e}`);
+  }
+});
+
+$("tcRefresh").addEventListener("click", refreshTerracotta);
+
+listen("terracotta-progress", (event) => {
+  $("tcProgress").classList.remove("hidden");
+  $("tcText").textContent = event.payload;
+  $("tcBar").style.width = "55%";
+});
+
+/* ------------------------------------------------------------------ 演示数据 */
 async function demoInvoke(command) {
   const demo = {
     gameDir: "C:\\Users\\Demo\\.minecraft",
@@ -341,8 +555,6 @@ async function demoInvoke(command) {
     width: 854,
     height: 480,
     fullscreen: false,
-    windowWidth: 1120,
-    windowHeight: 720,
   };
   switch (command) {
     case "get_settings":
@@ -351,33 +563,39 @@ async function demoInvoke(command) {
     case "list_installed":
       return [
         { id: "1.20.1", hasJar: true, javaMajor: 17 },
-        { id: "1.21.4", hasJar: true, javaMajor: 21 },
+        { id: "1.20.1-forge-47.2.0", hasJar: true, javaMajor: 17 },
       ];
+    case "version_info":
+      return { id: "1.20.1", gameVersion: "1.20.1", loader: "fabric", javaMajor: 17, kind: "release" };
     case "list_versions":
-      return ["1.21.4", "1.21.1", "1.20.6", "1.20.1", "1.19.2", "1.18.2", "1.16.5", "1.12.2", "1.8.9"].map(
-        (id, i) => ({
-          id,
-          kind: i === 2 ? "snapshot" : "release",
-          releaseTime: new Date(Date.now() - i * 86400000 * 40).toISOString(),
-          installed: i < 2,
-        })
-      );
+      return ["1.21.4", "1.21.1", "1.20.6", "1.20.1", "1.19.2", "1.18.2", "1.16.5", "1.12.2", "1.8.9"].map((id, i) => ({
+        id,
+        kind: i === 2 ? "snapshot" : "release",
+        releaseTime: new Date(Date.now() - i * 86400000 * 40).toISOString(),
+        installed: i < 2,
+      }));
     case "list_accounts":
       return [{ username: "Steve", uuid: "0".repeat(32), kind: "offline", selected: true, expired: false }];
     case "detect_java":
       return [{ major: 21, vendor: "Microsoft", arch: "x86_64", display: "Java 21.0.10 (Microsoft, x86_64)", path: "C:/jdk/bin/java.exe" }];
+    case "terracotta_status":
+      return { installed: true, exe: "C:/mc/pcl-rs/tools/terracotta/terracotta.exe", version: "0.4.2", running: false, dir: "C:/mc/pcl-rs/tools/terracotta" };
+    case "search_mods":
+      return [
+        { source: "Modrinth", id: "sodium", slug: "sodium", name: "Sodium", summary: "现代化渲染优化模组", downloads: 12345678, iconUrl: null, url: "https://modrinth.com/mod/sodium" },
+        { source: "Modrinth", id: "lithium", slug: "lithium", name: "Lithium", summary: "通用逻辑优化", downloads: 8765432, iconUrl: null, url: "https://modrinth.com/mod/lithium" },
+      ];
     default:
       return [];
   }
 }
 
+/* ------------------------------------------------------------------ 启动 */
 (async function main() {
-  if (!isDesktop) {
-    $("statusSource").textContent += "（浏览器演示模式）";
-  }
+  if (!isDesktop) $("statusSource").textContent += "（浏览器演示模式）";
   await loadSettings();
   fillSettings();
-  await loadInstalled();
   await loadAccounts();
+  await loadInstances();
   status("就绪");
 })();

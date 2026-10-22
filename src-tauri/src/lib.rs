@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_dialog::DialogExt;
 
 use pcl_auth::{Account, AccountKind, AccountStore, MicrosoftAuth};
 use pcl_core::GamePaths;
@@ -18,6 +19,10 @@ use pcl_launch::java;
 use pcl_launch::launcher::Launcher;
 use pcl_mods::{CurseForge, Loader, Modrinth, SearchQuery};
 use pcl_net::{DownloadTask, Downloader, HttpClient, Progress, SourcePool};
+
+pub mod terracotta;
+
+pub use terracotta::{TerracottaInstall, TerracottaStatus};
 
 // ---------------------------------------------------------------------------
 // View models (camelCase for the JS side)
@@ -91,12 +96,14 @@ impl Settings {
 
 pub struct AppState {
     settings: Mutex<Settings>,
+    terracotta: terracotta::TerracottaState,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             settings: Mutex::new(Settings::load()),
+            terracotta: terracotta::TerracottaState::default(),
         }
     }
 
@@ -184,6 +191,54 @@ pub struct ModView {
     pub url: String,
 }
 
+/// Everything the UI needs to scope downloads to one instance: the Minecraft
+/// version it runs and the mod loader it uses.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionInfoView {
+    pub id: String,
+    pub game_version: String,
+    /// `vanilla` | `fabric` | `quilt` | `forge` | `neoforge`
+    pub loader: String,
+    pub java_major: Option<u32>,
+    pub kind: String,
+}
+
+/// Detect the mod loader from a version profile.
+///
+/// Loader profiles are identified by their libraries first (reliable) and only
+/// then by the version id, because users rename profile folders freely.
+pub fn detect_loader(details: &pcl_core::VersionDetails) -> String {
+    for lib in &details.libraries {
+        let name = lib.name.to_ascii_lowercase();
+        if name.contains("fabric-loader") || name.contains("net.fabricmc:fabric") {
+            return "fabric".to_string();
+        }
+        if name.contains("quilt-loader") {
+            return "quilt".to_string();
+        }
+        if name.contains("neoforge") {
+            return "neoforge".to_string();
+        }
+        if name.contains("net.minecraftforge:forge") || name.contains("net.minecraftforge:fmlloader") {
+            return "forge".to_string();
+        }
+    }
+
+    let id = details.id.to_ascii_lowercase();
+    for (needle, loader) in [
+        ("neoforge", "neoforge"),
+        ("fabric", "fabric"),
+        ("quilt", "quilt"),
+        ("forge", "forge"),
+    ] {
+        if id.contains(needle) {
+            return loader.to_string();
+        }
+    }
+    "vanilla".to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -209,6 +264,25 @@ fn account_store(settings: &Settings) -> AccountStore {
 #[tauri::command]
 fn get_settings(state: State<'_, AppState>) -> Settings {
     state.settings()
+}
+
+/// 打开系统目录选择器，返回选中的游戏目录（`.minecraft` 所在目录）。
+///
+/// 用插件阻塞式 API 而不是 JS 端 `dialog.open()`：命令走 Rust 侧就不需要额外的
+/// capability 权限声明，前端只拿一个字符串。
+#[tauri::command]
+fn pick_game_dir(app: AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .set_title("选择游戏目录（包含 versions / assets / libraries 的文件夹）")
+        .blocking_pick_folder()
+        .map(|path| path.to_string())
+}
+
+/// 默认游戏目录，用于「使用默认」按钮。
+#[tauri::command]
+fn default_game_dir() -> String {
+    GamePaths::default_root().display().to_string()
 }
 
 #[tauri::command]
@@ -273,8 +347,7 @@ fn list_installed(state: State<'_, AppState>) -> Vec<InstalledView> {
 }
 
 #[tauri::command]
-async fn install_version(
-    app: AppHandle,
+async fn install_version(    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
     verify: bool,
@@ -608,6 +681,83 @@ async fn download_mod(
     Ok(dest.display().to_string())
 }
 
+/// Metadata for the instance currently selected in the download page.
+#[tauri::command]
+fn version_info(state: State<'_, AppState>, id: String) -> Result<VersionInfoView, String> {
+    let settings = state.settings();
+    let paths = settings.paths();
+    let json = paths.version_json(&id);
+    let text = std::fs::read_to_string(&json).map_err(err)?;
+    let details: pcl_core::VersionDetails = serde_json::from_str(&text).map_err(err)?;
+
+    // Loader profiles carry the vanilla version in `jar` (or `inheritsFrom`);
+    // vanilla profiles are their own game version.
+    let game_version = details
+        .jar
+        .clone()
+        .or_else(|| details.inherits_from.clone())
+        .unwrap_or_else(|| details.id.clone());
+
+    Ok(VersionInfoView {
+        loader: detect_loader(&details),
+        game_version,
+        java_major: details.required_java_major(),
+        kind: details.kind.clone().unwrap_or_else(|| "release".to_string()),
+        id: details.id,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// 陶瓦联机（Terracotta）
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn terracotta_status(state: State<'_, AppState>) -> TerracottaStatus {
+    let settings = state.settings();
+    let mut status = terracotta::status(settings.paths().root());
+    status.running = state.terracotta.running();
+    status
+}
+
+#[tauri::command]
+async fn install_terracotta(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<TerracottaInstall, String> {
+    let settings = state.settings();
+    let dir = settings.paths().root().to_path_buf();
+
+    let emitter = app.clone();
+    let result = terracotta::install(&dir, move |stage| {
+        let _ = emitter.emit("terracotta-progress", stage.to_string());
+    })
+    .await
+    .map_err(err)?;
+
+    Ok(result)
+}
+
+#[tauri::command]
+fn launch_terracotta(app: AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+    let settings = state.settings();
+    let game_dir = settings.paths().root().to_path_buf();
+    let status = terracotta::status(&game_dir);
+    let exe = status
+        .exe
+        .as_ref()
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| "还没有安装陶瓦联机，请先点「一键安装」".to_string())?;
+
+    let pid = terracotta::launch(&game_dir, &exe, &state.terracotta).map_err(err)?;
+    let _ = app.emit("terracotta-started", pid);
+    Ok(pid)
+}
+
+#[tauri::command]
+fn stop_terracotta(state: State<'_, AppState>) -> Result<(), String> {
+    state.terracotta.stop().map_err(err)
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -617,12 +767,16 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
+            pick_game_dir,
+            default_game_dir,
             list_versions,
             list_installed,
+            version_info,
             install_version,
             verify_version,
             detect_java,
@@ -633,6 +787,10 @@ pub fn run() {
             select_account,
             search_mods,
             download_mod,
+            terracotta_status,
+            install_terracotta,
+            launch_terracotta,
+            stop_terracotta,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PCL-RS");

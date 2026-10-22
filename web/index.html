@@ -10,30 +10,65 @@
   <div id="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">PCL</div>
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 15.5c0-4.7 3.6-8.5 8-8.5s8 3.8 8 8.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+            <path d="M9.5 19.5 15 10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+          </svg>
+        </div>
         <div class="brand-text">
           <strong>PCL-RS</strong>
           <span>Rust 重制版</span>
         </div>
       </div>
+
       <nav class="nav">
-        <button class="nav-item active" data-page="home"><span class="ico">🏠</span>主页</button>
-        <button class="nav-item" data-page="download"><span class="ico">⬇️</span>下载</button>
-        <button class="nav-item" data-page="instances"><span class="ico">📦</span>实例</button>
-        <button class="nav-item" data-page="mods"><span class="ico">🧩</span>Mod</button>
-        <button class="nav-item" data-page="settings"><span class="ico">⚙️</span>设置</button>
+        <button class="nav-item active" data-page="home">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M4 11.2 12 4l8 7.2V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          </span>主页
+        </button>
+        <button class="nav-item" data-page="download">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>下载
+        </button>
+        <button class="nav-item" data-page="instances">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          </span>实例
+        </button>
+        <button class="nav-item" data-page="online">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 12h16M12 4c2.5 2.4 2.5 13.2 0 16M12 4c-2.5 2.4-2.5 13.2 0 16" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          </span>联机
+        </button>
+        <button class="nav-item" data-page="settings">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v2.4M12 18.6V21M4.2 7.5 6.3 8.7M17.7 15.3l2.1 1.2M19.8 7.5l-2.1 1.2M6.3 15.3 4.2 16.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>设置
+        </button>
+        <button class="nav-item" data-page="about">
+          <span class="ico">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 10.6v6M12 7.6v.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </span>更多
+        </button>
       </nav>
+
       <div class="sidebar-foot">
-        <div class="account-chip" id="accountChip" title="点击切换账户">未登录</div>
+        <div class="account-chip" id="accountChip">未登录</div>
         <div class="hint">第三方独立实现 · 原作者 龙腾猫跃</div>
       </div>
     </aside>
 
     <main class="content">
+      <!-- ============ 主页 ============ -->
       <section class="page active" id="page-home">
         <header class="page-head">
-          <h1>启动游戏</h1>
-          <p class="muted">选择版本与账户，一键启动 Minecraft</p>
+          <div>
+            <h1>主页</h1>
+            <p class="muted">选择实例，一键启动 Minecraft</p>
+          </div>
         </header>
 
         <div class="notice">
@@ -45,7 +80,7 @@
 
         <div class="grid">
           <div class="card">
-            <h2>当前版本</h2>
+            <h2>启动游戏</h2>
             <div class="row">
               <select id="launchVersion" class="input"></select>
               <button class="btn ghost" id="refreshInstalled">刷新</button>
@@ -78,70 +113,156 @@
         </div>
       </section>
 
+      <!-- ============ 下载 ============ -->
       <section class="page" id="page-download">
         <header class="page-head">
-          <h1>下载游戏</h1>
-          <p class="muted">元数据与文件走 CDN 加速线路（BMCLAPI），失败自动回退官方源</p>
+          <div>
+            <h1>下载</h1>
+            <p class="muted">本体走 CDN 加速线路，Mod 来自 Modrinth / CurseForge 官方 API</p>
+          </div>
+          <div class="instance-pick">
+            <span class="pick-label">目标实例</span>
+            <select id="instanceSelect" class="input small"></select>
+          </div>
         </header>
-        <div class="row toolbar">
-          <input id="versionSearch" class="input" placeholder="搜索版本号，例如 1.20 / 1.21.4" />
-          <label class="check"><input type="checkbox" id="showSnapshots" /> 显示快照</label>
-          <button class="btn ghost" id="reloadVersions">刷新列表</button>
-        </div>
+
         <div class="progress-wrap hidden" id="dlProgress">
           <div class="progress"><div class="bar" id="dlBar"></div></div>
           <span class="progress-text" id="dlText"></span>
         </div>
-        <div class="version-list" id="versionList"></div>
+
+        <div class="split">
+          <nav class="subnav" id="downloadSubnav">
+            <button class="subnav-item active" data-sub="game">游戏本体</button>
+            <button class="subnav-item" data-sub="mod">Mod</button>
+            <button class="subnav-item" data-sub="modpack">整合包</button>
+            <button class="subnav-item" data-sub="resourcepack">资源包</button>
+            <button class="subnav-item" data-sub="shader">光影</button>
+            <button class="subnav-item" data-sub="datapack">数据包</button>
+            <button class="subnav-item" data-sub="world">世界</button>
+          </nav>
+
+          <div class="subcontent">
+            <!-- 游戏本体 -->
+            <div class="subpage active" id="sub-game">
+              <div class="row toolbar">
+                <input id="versionSearch" class="input" placeholder="搜索版本号，例如 1.20 / 1.21.4" />
+                <label class="check"><input type="checkbox" id="showSnapshots" /> 显示快照</label>
+                <button class="btn ghost" id="reloadVersions">刷新列表</button>
+              </div>
+              <div class="version-list" id="versionList"></div>
+            </div>
+
+            <!-- Mod -->
+            <div class="subpage" id="sub-mod">
+              <div class="scoped-hint" id="modScopeHint"></div>
+              <div class="row toolbar">
+                <select id="modSource" class="input small">
+                  <option value="modrinth">Modrinth</option>
+                  <option value="curseforge">CurseForge</option>
+                </select>
+                <input id="modQuery" class="input" placeholder="搜索 Mod 名称" />
+                <button class="btn primary" id="modSearch">搜索</button>
+              </div>
+              <div class="mod-filters" id="modFilters"></div>
+              <div class="version-list" id="modList"></div>
+            </div>
+
+            <!-- 其他占位 -->
+            <div class="subpage" id="sub-placeholder">
+              <div class="empty">
+                <div class="empty-icon">🧱</div>
+                <p><strong id="placeholderTitle">整合包</strong> 正在开发中</p>
+                <p class="muted">当前版本已支持：游戏本体安装、Mod 下载、实例校验与启动。</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
+      <!-- ============ 实例 ============ -->
       <section class="page" id="page-instances">
         <header class="page-head">
-          <h1>实例管理</h1>
-          <p class="muted">已安装在本机 .minecraft 的版本</p>
+          <div>
+            <h1>实例</h1>
+            <p class="muted">本机已安装的版本</p>
+          </div>
+          <button class="btn ghost" id="reloadInstances">刷新</button>
         </header>
-        <button class="btn ghost" id="reloadInstances">刷新</button>
         <div class="version-list" id="instanceList"></div>
       </section>
 
-      <section class="page" id="page-mods">
+      <!-- ============ 联机 ============ -->
+      <section class="page" id="page-online">
         <header class="page-head">
-          <h1>Mod 下载</h1>
-          <p class="muted">搜索来自 Modrinth 与 CurseForge 官方 API</p>
+          <div>
+            <h1>联机</h1>
+            <p class="muted">通过陶瓦联机（Terracotta）与朋友开房间联机</p>
+          </div>
         </header>
-        <div class="row toolbar">
-          <select id="modSource" class="input small">
-            <option value="modrinth">Modrinth</option>
-            <option value="curseforge">CurseForge</option>
-          </select>
-          <input id="modQuery" class="input" placeholder="搜索 Mod" />
-          <input id="modVersion" class="input small" placeholder="MC 版本" />
-          <select id="modLoader" class="input small">
-            <option value="">任意加载器</option>
-            <option value="fabric">Fabric</option>
-            <option value="forge">Forge</option>
-            <option value="neoforge">NeoForge</option>
-            <option value="quilt">Quilt</option>
-          </select>
-          <button class="btn" id="modSearch">搜索</button>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>陶瓦联机</h2>
+            <span class="badge" id="tcBadge">检测中…</span>
+          </div>
+          <p class="muted tc-desc">
+            Terracotta 是一个独立的开源 Minecraft 联机工具（AGPL-3.0）。PCL-RS 不重新分发它的代码，
+            只负责从官方 Release 下载、启动与关闭；建房间 / 加入房间在它自己的界面里完成。
+          </p>
+          <div class="row">
+            <button class="btn primary" id="tcInstall">一键下载并安装</button>
+            <button class="btn" id="tcLaunch">启动</button>
+            <button class="btn ghost" id="tcStop">停止</button>
+            <button class="btn ghost" id="tcRefresh">刷新状态</button>
+          </div>
+          <div class="progress-wrap hidden" id="tcProgress">
+            <div class="progress"><div class="bar" id="tcBar"></div></div>
+            <span class="progress-text" id="tcText"></span>
+          </div>
+          <div class="kv" id="tcInfo"></div>
         </div>
-        <div class="version-list" id="modList"></div>
+
+        <div class="card">
+          <h2>使用步骤</h2>
+          <ol class="steps">
+            <li>点「一键下载并安装」，PCL-RS 会从官方 Release 取 Windows x64 版本并解压到游戏目录下的 <code>pcl-rs/tools/terracotta/</code>。</li>
+            <li>点「启动」，在 Terracotta 界面里创建房间（房主）或输入房间码加入。</li>
+            <li>回到主页启动 Minecraft，多人游戏里即可看到局域网房间。</li>
+            <li>结束后可在本页点「停止」，或在 Terracotta 界面里退出。</li>
+          </ol>
+          <p class="muted">
+            项目主页：<a href="https://github.com/burningtnt/Terracotta" target="_blank">burningtnt/Terracotta</a> ·
+            Releases：<a href="https://github.com/burningtnt/Terracotta/releases" target="_blank">下载页</a>
+          </p>
+        </div>
       </section>
 
+      <!-- ============ 设置 ============ -->
       <section class="page" id="page-settings">
         <header class="page-head">
-          <h1>设置</h1>
-          <p class="muted">所有设置保存在游戏目录下的 pcl-rs/settings.json</p>
+          <div>
+            <h1>设置</h1>
+            <p class="muted">保存在游戏目录下的 pcl-rs/settings.json</p>
+          </div>
         </header>
         <div class="card">
           <h2>启动</h2>
-          <label class="field"><span>游戏目录</span><input id="setGameDir" class="input" /></label>
+          <label class="field">
+            <span>游戏目录（.minecraft，包含 versions / assets / libraries）</span>
+            <div class="row" style="margin:0">
+              <input id="setGameDir" class="input" placeholder="例如 C:\Users\你\AppData\Roaming\.minecraft" />
+              <button class="btn" id="browseGameDir">浏览…</button>
+              <button class="btn ghost" id="defaultGameDir">默认</button>
+            </div>
+          </label>
           <label class="field"><span>最大内存 (MB)</span><input id="setMemory" class="input" type="number" min="512" step="512" /></label>
           <div class="field-row">
             <label class="field"><span>窗口宽</span><input id="setWidth" class="input" type="number" /></label>
             <label class="field"><span>窗口高</span><input id="setHeight" class="input" type="number" /></label>
             <label class="check"><input type="checkbox" id="setFullscreen" /> 全屏</label>
           </div>
+          <p class="muted">更换目录后请点下方「保存设置」，实例列表会按新目录重新读取。</p>
         </div>
         <div class="card">
           <h2>下载</h2>
@@ -162,6 +283,39 @@
           <div id="javaList" class="java-list"></div>
         </div>
         <button class="btn primary" id="saveSettings">保存设置</button>
+      </section>
+
+      <!-- ============ 更多 ============ -->
+      <section class="page" id="page-about">
+        <header class="page-head">
+          <div><h1>更多</h1><p class="muted">关于、署名与许可</p></div>
+        </header>
+        <div class="card">
+          <h2>关于 PCL-RS</h2>
+          <div class="kv">
+            <div><span>版本</span><b id="aboutVersion">0.1.0</b></div>
+            <div><span>仓库</span><a href="https://github.com/mc-githu/pcl-rs" target="_blank">github.com/mc-githu/pcl-rs</a></div>
+            <div><span>许可</span><span>GPL-3.0-or-later</span></div>
+          </div>
+          <p class="muted">
+            PCL-RS 是第三方独立实现，与 PCL 官方无关。下载走官方源与授权 CDN 镜像，Mod 走 Modrinth /
+            CurseForge 官方 API，不附带、也不重新分发任何 Minecraft 游戏文件。
+          </p>
+        </div>
+        <div class="card">
+          <h2>致谢</h2>
+          <div class="kv">
+            <div><span>PCL 作者</span><b>龙腾猫跃</b></div>
+            <div><span>PCL 仓库</span><a href="https://github.com/Meloong-Git/PCL" target="_blank">Meloong-Git/PCL</a></div>
+            <div><span>赞助 PCL</span><a href="https://afdian.com/a/LTCat" target="_blank">afdian.com/a/LTCat</a></div>
+            <div><span>陶瓦联机</span><a href="https://github.com/burningtnt/Terracotta" target="_blank">burningtnt/Terracotta</a></div>
+            <div><span>下载镜像</span><a href="https://bmclapi2.bangbang93.com/" target="_blank">BMCLAPI</a></div>
+          </div>
+          <p class="muted">
+            依据《PCL 存储库合理使用指南》：本项目以 PCL 开头并以「RS」标明重制，公开源代码，
+            保留指南文件，启动前给出正版劝导，界面色相保持蓝色且不含赞助解锁类功能。
+          </p>
+        </div>
       </section>
     </main>
 
