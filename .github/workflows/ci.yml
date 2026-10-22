@@ -47,11 +47,27 @@ jobs:
         working-directory: src-tauri
         run: cargo build --release
 
-      - name: Upload exe
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build installer (NSIS + MSI)
+        working-directory: src-tauri
+        run: cargo tauri build
+
+      - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
           name: pcl-rs-desktop-windows
           path: src-tauri/target/release/pcl-rs-app.exe
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: pcl-rs-installer-windows
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
 
   # Linux proves the library crates stay portable (no Windows-only APIs leaked
   # into core crates).

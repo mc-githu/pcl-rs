@@ -102,7 +102,7 @@
               <input id="newOfflineName" class="input" placeholder="新离线账户名" />
               <button class="btn" id="addOffline">添加</button>
             </div>
-            <button class="btn ghost" id="msLogin">微软账户登录（设备码）</button>
+            <div class="row" style="margin:0"><button class="btn primary" id="msLoginBrowser">浏览器登录微软账户</button><button class="btn ghost" id="msLogin">设备码登录</button></div>
             <div id="msCode" class="ms-code hidden"></div>
           </div>
         </div>
@@ -197,43 +197,65 @@
         <header class="page-head">
           <div>
             <h1>联机</h1>
-            <p class="muted">通过陶瓦联机（Terracotta）与朋友开房间联机</p>
+            <p class="muted">通过陶瓦联机（Terracotta）开房间，房间码会直接显示在这里</p>
           </div>
         </header>
 
         <div class="card">
           <div class="card-head">
             <h2>陶瓦联机</h2>
-            <span class="badge" id="tcBadge">检测中…</span>
+            <span class="badge grey" id="tcBadge">未启动</span>
           </div>
           <p class="muted tc-desc">
-            Terracotta 是一个独立的开源 Minecraft 联机工具（AGPL-3.0）。PCL-RS 不重新分发它的代码，
-            只负责从官方 Release 下载、启动与关闭；建房间 / 加入房间在它自己的界面里完成。
+            Terracotta 是独立的开源联机工具（AGPL-3.0）。PCL-RS 不重新分发它的代码，
+            只从官方 Release 下载，并通过它的本地 HTTP API 控制：启动、开房、加入、退出——
+            所以房间码能直接显示在这里，不需要切到它的窗口。
           </p>
-          <div class="row">
-            <button class="btn primary" id="tcInstall">一键下载并安装</button>
-            <button class="btn" id="tcLaunch">启动</button>
-            <button class="btn ghost" id="tcStop">停止</button>
-            <button class="btn ghost" id="tcRefresh">刷新状态</button>
+
+          <div class="field-row">
+            <label class="field"><span>你的显示名</span><input id="tcPlayer" class="input" placeholder="例如 Steve" /></label>
+            <label class="field"><span>房间码（加入时填）</span><input id="tcRoom" class="input" placeholder="U/XXXX-XXXX-XXXX-XXXX" /></label>
           </div>
+
+          <div class="row">
+            <button class="btn" id="tcInstall">一键下载并安装</button>
+            <button class="btn primary" id="tcStart">启动联机服务</button>
+            <button class="btn" id="tcHost">创建房间</button>
+            <button class="btn" id="tcJoin">加入房间</button>
+            <button class="btn ghost" id="tcQuit">退出联机</button>
+            <button class="btn ghost" id="tcRefresh">刷新</button>
+          </div>
+
           <div class="progress-wrap hidden" id="tcProgress">
             <div class="progress"><div class="bar" id="tcBar"></div></div>
             <span class="progress-text" id="tcText"></span>
           </div>
+
+          <div class="room-box hidden" id="tcRoomBox">
+            <div class="room-main">
+              <span class="room-label">房间码</span>
+              <div class="room-code" id="tcRoomCode">-</div>
+              <p class="muted" id="tcRoomHint">把这个码发给朋友，让他们在「加入房间」里粘贴即可。</p>
+            </div>
+            <button class="btn" id="tcCopyRoom">复制</button>
+          </div>
+
+          <div id="tcMembers" class="members"></div>
           <div class="kv" id="tcInfo"></div>
         </div>
 
         <div class="card">
           <h2>使用步骤</h2>
           <ol class="steps">
-            <li>点「一键下载并安装」，PCL-RS 会从官方 Release 取 Windows x64 版本并解压到游戏目录下的 <code>pcl-rs/tools/terracotta/</code>。</li>
-            <li>点「启动」，在 Terracotta 界面里创建房间（房主）或输入房间码加入。</li>
-            <li>回到主页启动 Minecraft，多人游戏里即可看到局域网房间。</li>
-            <li>结束后可在本页点「停止」，或在 Terracotta 界面里退出。</li>
+            <li>点「一键下载并安装」，PCL-RS 会从官方 Release 取 Windows x64 包，解压到 <code>游戏目录/pcl-rs/tools/terracotta/</code>。</li>
+            <li>填好显示名，点「启动联机服务」。</li>
+            <li>房主：点「创建房间」。等状态变成 <b>房间已就绪</b> 后，本页会显示房间码。</li>
+            <li>加入方：粘贴房主的房间码，点「加入房间」，成功后即可在多人游戏里看到房间。</li>
+            <li>结束后点「退出联机」。</li>
           </ol>
           <p class="muted">
             项目主页：<a href="https://github.com/burningtnt/Terracotta" target="_blank">burningtnt/Terracotta</a> ·
-            Releases：<a href="https://github.com/burningtnt/Terracotta/releases" target="_blank">下载页</a>
+            接口文档基于其官方 <code>sites/docs/api.md</code>
           </p>
         </div>
       </section>
@@ -329,3 +351,4 @@
   <script src="app.js"></script>
 </body>
 </html>
+

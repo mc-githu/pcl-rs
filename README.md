@@ -20,11 +20,11 @@ PCL-RS 是针对这件事的第三方独立实现 —— **下载链路重新设
 | 启动游戏 | ✅ | 现代 `arguments`（1.13+）与旧版 `minecraftArguments`（1.6–1.12）双格式 |
 | Java 探测 | ✅ | JAVA_HOME / PATH / 注册表 / 常见目录，按版本匹配最合适的 JDK |
 | 离线账户 | ✅ | UUID 与官方 `OfflinePlayer` 算法完全一致 |
-| 微软账户 | ✅ | OAuth 2.0 设备码 → Xbox Live → XSTS → Minecraft Services |
+| 微软账户 | ✅ | **浏览器登录**（OAuth 授权码 + PKCE + 本地回环回调）为主，设备码为备选；之后走 Xbox Live → XSTS → Minecraft Services |
 | Mod 搜索/下载 | ✅ | Modrinth 与 CurseForge **官方 API** |
 | 命令行 | ✅ | 全部核心能力可脚本化，便于 CI 与排障 |
 | 桌面 GUI | ✅ | Tauri 2 + 原生 Web 前端（无 Node 打包步骤），PCL 式左侧导航 + 下载页内分栏 |
-| 联机（陶瓦） | ✅ | 一键下载/启动/停止 [Terracotta](https://github.com/burningtnt/Terracotta)，不重新分发其代码 |
+| 联机（陶瓦） | ✅ | 一键安装 [Terracotta](https://github.com/burningtnt/Terracotta)，通过其本地 HTTP API 建房/加入/**直接显示房间码**；不重新分发其代码 |
 | 模组加载器安装 | 🚧 | 已能加载 `inheritsFrom` 的实例并启动；自动安装加载器待做 |
 | 整合包 / 资源包 / 光影 | 🚧 | 规划中 |
 | 崩溃分析 | 🚧 | 规划中 |
@@ -62,7 +62,7 @@ Mod 下载只走官方 API：
   右上角先选**目标实例**，Mod 搜索会自动用该实例的 Minecraft 版本与加载器过滤
   （未选实例时不能搜 Mod——这是刻意模仿 PCL 的行为）
 * **实例**：已安装版本、校验、补全、设为下载目标
-* **联机**：陶瓦联机（Terracotta）的状态、一键安装、启动与停止
+* **联机**：陶瓦联机（Terracotta）一键安装、启动、创建/加入房间，**房间码直接显示并一键复制**（对接其官方 HTTP API），成员与直连地址同屏可见
 * **设置**：游戏目录（可点「浏览…」用系统目录选择器更换）、内存、窗口、线路、CurseForge Key、Java 路径
 * **更多**：版本信息、署名与许可
 

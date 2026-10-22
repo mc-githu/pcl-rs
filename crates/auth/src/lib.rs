@@ -6,7 +6,9 @@
 //!   OAuth 2.0 device-code flow (no redirect URI, works from GUI or terminal).
 
 pub mod account;
+pub mod browser;
 pub mod microsoft;
 
 pub use account::{Account, AccountKind, AccountStore};
+pub use browser::{login_with_browser, BrowserLogin};
 pub use microsoft::{DeviceCodeFlow, MicrosoftAuth, MsToken};

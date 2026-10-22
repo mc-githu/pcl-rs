@@ -71,6 +71,14 @@ impl MicrosoftAuth {
         }
     }
 
+    pub fn client_id(&self) -> &str {
+        &self.client_id
+    }
+
+    pub fn client(&self) -> &HttpClient {
+        &self.client
+    }
+
     /// Step 1: ask Microsoft for a user code + verification URL.
     pub async fn request_device_code(&self) -> Result<DeviceCodeFlow> {
         let (status, body) = self
@@ -286,6 +294,11 @@ impl MicrosoftAuth {
         let token = self.poll_for_token(&flow, notify).await?;
         self.authenticate(&token).await
     }
+}
+
+/// 供浏览器登录流程复用的 token 解析入口。
+pub(crate) fn decode_token_public(body: &serde_json::Value) -> Result<MsToken> {
+    decode_ms_token(body)
 }
 
 fn decode_ms_token(body: &serde_json::Value) -> Result<MsToken> {

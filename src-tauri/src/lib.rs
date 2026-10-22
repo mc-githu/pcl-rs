@@ -97,6 +97,8 @@ impl Settings {
 pub struct AppState {
     settings: Mutex<Settings>,
     terracotta: terracotta::TerracottaState,
+    /// 与 Terracotta 内嵌 HTTP API 通信的端口（集成模式）。
+    tc: terracotta::Integration,
 }
 
 impl AppState {
@@ -104,6 +106,7 @@ impl AppState {
         Self {
             settings: Mutex::new(Settings::load()),
             terracotta: terracotta::TerracottaState::default(),
+            tc: terracotta::Integration::default(),
         }
     }
 
@@ -540,6 +543,36 @@ fn login_offline(state: State<'_, AppState>, name: String) -> Result<AccountView
     })
 }
 
+/// 浏览器登录：拉起系统浏览器，用户在网页里完成登录后自动回调本机端口。
+#[tauri::command]
+async fn login_microsoft_browser(state: State<'_, AppState>) -> Result<AccountView, String> {
+    let settings = state.settings();
+    let client = HttpClient::new(SourcePool::official()).map_err(err)?;
+    let auth = MicrosoftAuth::new(client.clone());
+
+    let session = auth.begin_browser_login().await.map_err(err)?;
+    pcl_auth::browser::open_browser(&session.authorize_url).map_err(err)?;
+
+    let account = auth
+        .complete_browser_login(session, std::time::Duration::from_secs(300))
+        .await
+        .map_err(err)?;
+
+    let mut store = account_store(&settings);
+    store.upsert(account.clone());
+    store
+        .save(&AccountStore::default_path(settings.paths().root()))
+        .map_err(err)?;
+
+    Ok(AccountView {
+        username: account.username,
+        uuid: account.uuid,
+        kind: "microsoft".to_string(),
+        selected: true,
+        expired: false,
+    })
+}
+
 #[tauri::command]
 async fn login_microsoft(app: AppHandle, state: State<'_, AppState>) -> Result<AccountView, String> {
     let settings = state.settings();
@@ -737,8 +770,17 @@ async fn install_terracotta(
     Ok(result)
 }
 
+/// 以集成模式启动 Terracotta，返回它内嵌 HTTP 服务的端口。
 #[tauri::command]
-fn launch_terracotta(app: AppHandle, state: State<'_, AppState>) -> Result<u32, String> {
+async fn launch_terracotta(app: AppHandle, state: State<'_, AppState>) -> Result<u16, String> {
+    // Alread running? Just reuse the port.
+    if let Some(port) = state.tc.port() {
+        if terracotta::fetch_state(port).await.is_ok() {
+            return Ok(port);
+        }
+        state.tc.set_port(None);
+    }
+
     let settings = state.settings();
     let game_dir = settings.paths().root().to_path_buf();
     let status = terracotta::status(&game_dir);
@@ -748,13 +790,54 @@ fn launch_terracotta(app: AppHandle, state: State<'_, AppState>) -> Result<u32, 
         .map(std::path::PathBuf::from)
         .ok_or_else(|| "还没有安装陶瓦联机，请先点「一键安装」".to_string())?;
 
-    let pid = terracotta::launch(&game_dir, &exe, &state.terracotta).map_err(err)?;
-    let _ = app.emit("terracotta-started", pid);
-    Ok(pid)
+    let port = terracotta::launch_integrated(&game_dir, &exe, &state.tc)
+        .await
+        .map_err(err)?;
+    let _ = app.emit("terracotta-started", port);
+    Ok(port)
 }
 
+/// 读取房间状态（房间码、成员、直连地址都由它给出）。
 #[tauri::command]
-fn stop_terracotta(state: State<'_, AppState>) -> Result<(), String> {
+async fn terracotta_state(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let port = state
+        .tc
+        .port()
+        .ok_or_else(|| "陶瓦联机尚未启动".to_string())?;
+    terracotta::fetch_state(port).await.map_err(err)
+}
+
+/// 创建房间（房主）：先让 Terracotta 扫描本机 Minecraft，再进入 host 流程。
+#[tauri::command]
+async fn terracotta_host(state: State<'_, AppState>, player: String) -> Result<(), String> {
+    let port = state
+        .tc
+        .port()
+        .ok_or_else(|| "陶瓦联机尚未启动".to_string())?;
+    terracotta::host(port, &player).await.map_err(err)
+}
+
+/// 通过房间码加入房间。
+#[tauri::command]
+async fn terracotta_join(
+    state: State<'_, AppState>,
+    room: String,
+    player: String,
+) -> Result<(), String> {
+    let port = state
+        .tc
+        .port()
+        .ok_or_else(|| "陶瓦联机尚未启动".to_string())?;
+    terracotta::join(port, &room, &player).await.map_err(err)
+}
+
+/// 优雅退出 Terracotta。
+#[tauri::command]
+async fn stop_terracotta(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(port) = state.tc.port() {
+        let _ = terracotta::quit(port).await;
+    }
+    state.tc.set_port(None);
     state.terracotta.stop().map_err(err)
 }
 
@@ -790,7 +873,11 @@ pub fn run() {
             terracotta_status,
             install_terracotta,
             launch_terracotta,
+            terracotta_state,
+            terracotta_host,
+            terracotta_join,
             stop_terracotta,
+            login_microsoft_browser,
         ])
         .run(tauri::generate_context!())
         .expect("error while running PCL-RS");

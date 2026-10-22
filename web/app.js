@@ -464,41 +464,114 @@ listen("ms-code", (event) => {
   status("等待在浏览器中完成登录…");
 });
 
-/* ------------------------------------------------------------------ 联机（陶瓦） */
-let tcRunning = false;
+/* ------------------------------------------------------------------ 联机（陶瓦联机 · 房间码） */
+let tcPort = null;
+let tcTimer = null;
+
+const TC_STATE_TEXT = {
+  "waiting": "待机",
+  "host-scanning": "正在扫描本机 Minecraft…",
+  "host-starting": "正在创建房间…",
+  "host-ok": "房间已就绪",
+  "guest-connecting": "正在连接房主…",
+  "guest-starting": "正在建立连接…",
+  "guest-ok": "已加入房间",
+  "exception": "出错了",
+};
+
+function stopTcPolling() {
+  if (tcTimer) {
+    clearInterval(tcTimer);
+    tcTimer = null;
+  }
+}
+
+function startTcPolling() {
+  stopTcPolling();
+  tcTimer = setInterval(refreshTerracottaState, 900);
+}
+
+function setTcBadge(text, cls) {
+  const badge = $("tcBadge");
+  badge.textContent = text;
+  badge.className = `badge ${cls}`;
+}
 
 async function refreshTerracotta() {
+  // 1) 安装状态
   try {
     const s = await invoke("terracotta_status");
-    tcRunning = s.running;
-    const badge = $("tcBadge");
-    if (s.running) {
-      badge.className = "badge ok";
-      badge.textContent = "运行中";
-    } else if (s.installed) {
-      badge.className = "badge";
-      badge.textContent = `已安装${s.version ? " v" + s.version : ""}`;
-    } else {
-      badge.className = "badge grey";
-      badge.textContent = "未安装";
-    }
     $("tcInfo").innerHTML = `
-      <div><span>状态</span><b>${s.running ? "运行中" : s.installed ? "已就绪" : "未安装"}</b></div>
-      <div><span>版本</span><b>${esc(s.version ?? "-")}</b></div>
+      <div><span>安装</span><b>${s.installed ? "已安装" + (s.version ? " v" + esc(s.version) : "") : "未安装"}</b></div>
       <div><span>路径</span><span>${esc(s.exe ?? s.dir)}</span></div>
     `;
-    $("tcLaunch").disabled = !s.installed || s.running;
-    $("tcStop").disabled = !s.running;
+    if (!s.installed) setTcBadge("未安装", "grey");
+    $("tcStart").disabled = !s.installed;
+    $("tcHost").disabled = !s.installed;
+    $("tcJoin").disabled = !s.installed;
   } catch (e) {
-    $("tcBadge").className = "badge grey";
-    $("tcBadge").textContent = "检测失败";
-    logLine(`[联机] 状态检测失败: ${e}`);
+    logLine(`[联机] 安装状态检测失败: ${e}`);
+  }
+  // 2) 服务状态
+  await refreshTerracottaState();
+}
+
+async function refreshTerracottaState() {
+  if (tcPort === null) {
+    // 可能已经在运行（之前启动过）：尝试直接读
+    try {
+      const port = await invoke("launch_terracotta");
+      tcPort = port;
+    } catch {
+      setTcBadge("未启动", "grey");
+      $("tcRoomBox").classList.add("hidden");
+      $("tcMembers").innerHTML = "";
+      return;
+    }
+  }
+
+  try {
+    const s = await invoke("terracotta_state");
+    const state = s.state ?? "waiting";
+    const room = s.room ?? "";
+
+    setTcBadge(TC_STATE_TEXT[state] ?? state, state.endsWith("-ok") ? "ok" : state === "exception" ? "warn" : "");
+
+    if (room) {
+      $("tcRoomBox").classList.remove("hidden");
+      $("tcRoomCode").textContent = room;
+      $("tcRoomHint").textContent = state === "host-ok"
+        ? "把这个码发给朋友，让他们在「加入房间」里粘贴即可。"
+        : "房间正在建立，稍候房间码即可使用。";
+    } else {
+      $("tcRoomBox").classList.add("hidden");
+    }
+
+    if (s.url) {
+      $("tcInfo").insertAdjacentHTML("beforeend", `<div><span>直连地址</span><code>${esc(s.url)}</code></div>`);
+    }
+    if (s.difficulty) {
+      $("tcInfo").insertAdjacentHTML("beforeend", `<div><span>NAT 难度</span><b>${esc(s.difficulty)}</b></div>`);
+    }
+    if (s.type !== undefined && state === "exception") {
+      $("tcMembers").innerHTML = `<div class="empty"><p>连接失败（类型 ${esc(s.type)}），请检查房间码或网络。</p></div>`;
+    } else if (Array.isArray(s.profiles)) {
+      $("tcMembers").innerHTML = s.profiles
+        .map((p) => `<div class="member"><span class="member-name">${esc(p.name ?? "未知")}</span><span class="badge grey">${esc(p.kind ?? "")}</span></div>`)
+        .join("");
+    }
+  } catch (e) {
+    // 服务已退出
+    tcPort = null;
+    setTcBadge("已停止", "grey");
+    $("tcRoomBox").classList.add("hidden");
+    stopTcPolling();
   }
 }
 
 $("tcInstall").addEventListener("click", async () => {
   $("tcProgress").classList.remove("hidden");
-  $("tcBar").style.width = "8%";
+  $("tcBar").style.width = "10%";
   $("tcText").textContent = "正在准备…";
   $("tcInstall").disabled = true;
   try {
@@ -515,28 +588,73 @@ $("tcInstall").addEventListener("click", async () => {
   }
 });
 
-$("tcLaunch").addEventListener("click", async () => {
+$("tcStart").addEventListener("click", async () => {
+  status("正在启动陶瓦联机服务…");
   try {
-    const pid = await invoke("launch_terracotta");
-    status(`陶瓦联机已启动 (PID ${pid})`);
-    logLine(`[联机] 陶瓦联机已启动，PID ${pid}`);
-    setTimeout(refreshTerracotta, 800);
+    tcPort = await invoke("launch_terracotta");
+    status(`联机服务已就绪（端口 ${tcPort}）`);
+    logLine(`[联机] Terracotta 已启动，端口 ${tcPort}`);
+    startTcPolling();
+    await refreshTerracottaState();
   } catch (e) {
     status(`启动失败: ${e}`);
+    logLine(`[联机] 启动失败: ${e}`);
   }
 });
 
-$("tcStop").addEventListener("click", async () => {
+$("tcHost").addEventListener("click", async () => {
+  const player = $("tcPlayer").value.trim() || "PCL-RS 房主";
+  try {
+    await invoke("terracotta_host", { player });
+    status("已请求创建房间：先在 Minecraft 里「对局域网开放」，扫描到后会自动生成房间码");
+    startTcPolling();
+  } catch (e) {
+    status(`创建房间失败: ${e}`);
+  }
+});
+
+$("tcJoin").addEventListener("click", async () => {
+  const room = $("tcRoom").value.trim();
+  if (!room) {
+    status("请先粘贴房主的房间码");
+    return;
+  }
+  const player = $("tcPlayer").value.trim() || "PCL-RS 玩家";
+  try {
+    await invoke("terracotta_join", { room, player });
+    status("正在加入房间…");
+    startTcPolling();
+  } catch (e) {
+    status(`加入失败: ${e}`);
+  }
+});
+
+$("tcQuit").addEventListener("click", async () => {
   try {
     await invoke("stop_terracotta");
-    status("陶瓦联机已停止");
-    setTimeout(refreshTerracotta, 400);
+    tcPort = null;
+    stopTcPolling();
+    setTcBadge("已停止", "grey");
+    $("tcRoomBox").classList.add("hidden");
+    $("tcMembers").innerHTML = "";
+    status("已退出联机");
   } catch (e) {
-    status(`停止失败: ${e}`);
+    status(`退出失败: ${e}`);
   }
 });
 
 $("tcRefresh").addEventListener("click", refreshTerracotta);
+
+$("tcCopyRoom").addEventListener("click", async () => {
+  const code = $("tcRoomCode").textContent.trim();
+  if (!code || code === "-") return;
+  try {
+    await navigator.clipboard.writeText(code);
+    status(`已复制房间码 ${code}`);
+  } catch {
+    status("复制失败，请手动选中房间码复制");
+  }
+});
 
 listen("terracotta-progress", (event) => {
   $("tcProgress").classList.remove("hidden");
@@ -544,6 +662,19 @@ listen("terracotta-progress", (event) => {
   $("tcBar").style.width = "55%";
 });
 
+/* ------------------------------------------------------------------ 微软登录（浏览器 / 设备码） */
+$("msLoginBrowser").addEventListener("click", async () => {
+  status("已打开浏览器，请在网页中完成 Microsoft 登录…");
+  try {
+    const account = await invoke("login_microsoft_browser");
+    await loadAccounts();
+    status(`登录成功：${account.username}`);
+    logLine(`[账户] 微软登录成功：${account.username}`);
+  } catch (e) {
+    status(`登录失败: ${e}`);
+    logLine(`[账户] 浏览器登录失败: ${e}`);
+  }
+});
 /* ------------------------------------------------------------------ 演示数据 */
 async function demoInvoke(command) {
   const demo = {
@@ -599,3 +730,4 @@ async function demoInvoke(command) {
   await loadInstances();
   status("就绪");
 })();
+

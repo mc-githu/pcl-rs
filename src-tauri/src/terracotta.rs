@@ -284,3 +284,134 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+// ---------------------------------------------------------------------------
+// 深度集成：复用 Terracotta 内嵌的 HTTP API（本机回环，端口随机）
+//
+// 官方接入方式：以 `terracotta --hmcl <file>` 启动，服务就绪后会把
+// {"port": N} 写入该文件；之后所有操作都是对 http://127.0.0.1:N 的 GET 请求。
+// 这样启动器就能直接显示房间码，而不必让用户去看 Terracotta 的窗口。
+// ---------------------------------------------------------------------------
+
+use pcl_net::HttpClient as TcHttp;
+
+/// 集成模式下与 Terracotta 通信的句柄。
+#[derive(Default)]
+pub struct Integration {
+    port: Mutex<Option<u16>>,
+}
+
+impl Integration {
+    pub fn port(&self) -> Option<u16> {
+        self.port.lock().ok().and_then(|p| *p)
+    }
+
+    pub fn set_port(&self, port: Option<u16>) {
+        if let Ok(mut guard) = self.port.lock() {
+            *guard = port;
+        }
+    }
+}
+
+/// 以集成模式启动：`terracotta --hmcl <port_file>`，并等待端口文件出现。
+pub async fn launch_integrated(
+    game_dir: &Path,
+    exe: &Path,
+    integration: &Integration,
+) -> Result<u16> {
+    let port_file = std::env::temp_dir().join(format!(
+        "pcl-rs-terracotta-{}.json",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&port_file);
+
+    // Windows 下 --hmcl 是引导进程：它 fork 出真正的工作进程后自行退出，
+    // 因此这里不要等待子进程结束，只等端口文件。
+    let _child = Command::new(exe)
+        .arg("--hmcl")
+        .arg(&port_file)
+        .current_dir(game_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("启动 {}", exe.display()))?;
+
+    for _ in 0..120 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(text) = std::fs::read_to_string(&port_file) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(port) = value.get("port").and_then(|p| p.as_u64()) {
+                    let port = port as u16;
+                    integration.set_port(Some(port));
+                    let _ = std::fs::remove_file(&port_file);
+                    return Ok(port);
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&port_file);
+    bail!("等待 Terracotta 服务超时（12 秒）；请确认它已正确解压并可运行")
+}
+
+fn api_url(port: u16, path: &str) -> String {
+    format!("http://127.0.0.1:{port}{path}")
+}
+
+/// 读取 `GET /state`（房间状态机，含房间码与成员列表）。
+pub async fn fetch_state(port: u16) -> Result<serde_json::Value> {
+    let http = TcHttp::new(pcl_net::SourcePool::official())?;
+    let (status, value) = http
+        .get_json_value(&api_url(port, "/state"), None)
+        .await
+        .context("读取 Terracotta 状态")?;
+    if !status.is_success() {
+        bail!("Terracotta /state 返回 {status}: {value}");
+    }
+    Ok(value)
+}
+
+/// `GET /state/scanning` —— 房主开始扫描本机 Minecraft 并创建房间。
+pub async fn host(port: u16, player: &str) -> Result<()> {
+    let http = TcHttp::new(pcl_net::SourcePool::official())?;
+    // 查询串在独立作用域里构建：Serializer 不是 Send，不能跨 await 持有。
+    let url = {
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params.append_pair("player", player);
+        api_url(port, &format!("/state/scanning?{}", params.finish()))
+    };
+
+    let (status, value) = http.get_json_value(&url, None).await?;
+    if !status.is_success() {
+        bail!("创建房间失败 ({status}): {value}");
+    }
+    Ok(())
+}
+
+/// `GET /state/guesting` —— 以加入方身份进入指定房间。
+pub async fn join(port: u16, room: &str, player: &str) -> Result<()> {
+    let http = TcHttp::new(pcl_net::SourcePool::official())?;
+    let url = {
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params.append_pair("room", room.trim());
+        if !player.is_empty() {
+            params.append_pair("player", player);
+        }
+        api_url(port, &format!("/state/guesting?{}", params.finish()))
+    };
+
+    let (status, value) = http.get_json_value(&url, None).await?;
+    if !status.is_success() {
+        bail!("加入房间失败 ({status})：请检查房间码是否正确，且当前未在房间中");
+    }
+    Ok(())
+}
+
+/// `GET /panic?peaceful=true` —— 优雅退出 Terracotta。
+pub async fn quit(port: u16) -> Result<()> {
+    let http = TcHttp::new(pcl_net::SourcePool::official())?;
+    let _ = http
+        .get_json_value(&api_url(port, "/panic?peaceful=true"), None)
+        .await;
+    Ok(())
+}
