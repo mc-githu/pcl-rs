@@ -1,0 +1,18 @@
+[package]
+name = "pcl-launch"
+description = "Java discovery, argument construction and process launching for PCL-RS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+pcl-core = { workspace = true }
+pcl-net = { workspace = true }
+pcl-auth = { workspace = true }
+pcl-install = { workspace = true }

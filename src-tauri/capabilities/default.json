@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "PCL-RS 主窗口能力：只暴露启动器自身的命令与基础窗口操作。",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

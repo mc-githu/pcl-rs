@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PCL-RS",
+  "version": "0.1.0",
+  "identifier": "io.github.mcgithu.pclrs",
+  "build": {
+    "frontendDist": "../web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "PCL-RS — Minecraft 启动器",
+        "width": 1120,
+        "height": 720,
+        "minWidth": 940,
+        "minHeight": 620,
+        "resizable": true,
+        "center": true,
+        "theme": "Light"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http: https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Rust 重写的 PCL 风格 Minecraft 启动器",
+    "longDescription": "PCL-RS 是一个用 Rust 编写的 Minecraft 启动器，下载走 CDN 加速线路，Mod 来自 Modrinth 与 CurseForge 官方 API。"
+  }
+}

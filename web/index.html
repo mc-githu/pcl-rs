@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PCL-RS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">PCL</div>
+        <div class="brand-text">
+          <strong>PCL-RS</strong>
+          <span>Rust 重制版</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-page="home"><span class="ico">🏠</span>主页</button>
+        <button class="nav-item" data-page="download"><span class="ico">⬇️</span>下载</button>
+        <button class="nav-item" data-page="instances"><span class="ico">📦</span>实例</button>
+        <button class="nav-item" data-page="mods"><span class="ico">🧩</span>Mod</button>
+        <button class="nav-item" data-page="settings"><span class="ico">⚙️</span>设置</button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="account-chip" id="accountChip" title="点击切换账户">未登录</div>
+        <div class="hint">第三方独立实现 · 原作者 龙腾猫跃</div>
+      </div>
+    </aside>
+
+    <main class="content">
+      <section class="page active" id="page-home">
+        <header class="page-head">
+          <h1>启动游戏</h1>
+          <p class="muted">选择版本与账户，一键启动 Minecraft</p>
+        </header>
+
+        <div class="notice">
+          <strong>正版提示：</strong>如果你还没有购买 Minecraft，请
+          <a href="https://www.minecraft.net/zh-hans/store/minecraft-java-bedrock-edition-pc" target="_blank">前往官方商店支持正版</a>。
+          PCL-RS 不附带任何游戏本体文件。喜欢 PCL 的话，欢迎
+          <a href="https://afdian.com/a/LTCat" target="_blank">赞助原作者 龙腾猫跃</a>。
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <h2>当前版本</h2>
+            <div class="row">
+              <select id="launchVersion" class="input"></select>
+              <button class="btn ghost" id="refreshInstalled">刷新</button>
+            </div>
+            <div class="row">
+              <input id="offlineName" class="input" placeholder="离线用户名（留空则用已选账户）" />
+            </div>
+            <button class="btn primary big" id="launchBtn">启动游戏</button>
+            <div class="progress-wrap hidden" id="launchProgress">
+              <div class="progress"><div class="bar" id="launchBar"></div></div>
+              <span class="progress-text" id="launchText"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>账户</h2>
+            <div id="accountList" class="account-list"></div>
+            <div class="row">
+              <input id="newOfflineName" class="input" placeholder="新离线账户名" />
+              <button class="btn" id="addOffline">添加</button>
+            </div>
+            <button class="btn ghost" id="msLogin">微软账户登录（设备码）</button>
+            <div id="msCode" class="ms-code hidden"></div>
+          </div>
+        </div>
+
+        <div class="card log-card">
+          <h2>运行日志</h2>
+          <pre id="logView" class="log"></pre>
+        </div>
+      </section>
+
+      <section class="page" id="page-download">
+        <header class="page-head">
+          <h1>下载游戏</h1>
+          <p class="muted">元数据与文件走 CDN 加速线路（BMCLAPI），失败自动回退官方源</p>
+        </header>
+        <div class="row toolbar">
+          <input id="versionSearch" class="input" placeholder="搜索版本号，例如 1.20 / 1.21.4" />
+          <label class="check"><input type="checkbox" id="showSnapshots" /> 显示快照</label>
+          <button class="btn ghost" id="reloadVersions">刷新列表</button>
+        </div>
+        <div class="progress-wrap hidden" id="dlProgress">
+          <div class="progress"><div class="bar" id="dlBar"></div></div>
+          <span class="progress-text" id="dlText"></span>
+        </div>
+        <div class="version-list" id="versionList"></div>
+      </section>
+
+      <section class="page" id="page-instances">
+        <header class="page-head">
+          <h1>实例管理</h1>
+          <p class="muted">已安装在本机 .minecraft 的版本</p>
+        </header>
+        <button class="btn ghost" id="reloadInstances">刷新</button>
+        <div class="version-list" id="instanceList"></div>
+      </section>
+
+      <section class="page" id="page-mods">
+        <header class="page-head">
+          <h1>Mod 下载</h1>
+          <p class="muted">搜索来自 Modrinth 与 CurseForge 官方 API</p>
+        </header>
+        <div class="row toolbar">
+          <select id="modSource" class="input small">
+            <option value="modrinth">Modrinth</option>
+            <option value="curseforge">CurseForge</option>
+          </select>
+          <input id="modQuery" class="input" placeholder="搜索 Mod" />
+          <input id="modVersion" class="input small" placeholder="MC 版本" />
+          <select id="modLoader" class="input small">
+            <option value="">任意加载器</option>
+            <option value="fabric">Fabric</option>
+            <option value="forge">Forge</option>
+            <option value="neoforge">NeoForge</option>
+            <option value="quilt">Quilt</option>
+          </select>
+          <button class="btn" id="modSearch">搜索</button>
+        </div>
+        <div class="version-list" id="modList"></div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <header class="page-head">
+          <h1>设置</h1>
+          <p class="muted">所有设置保存在游戏目录下的 pcl-rs/settings.json</p>
+        </header>
+        <div class="card">
+          <h2>启动</h2>
+          <label class="field"><span>游戏目录</span><input id="setGameDir" class="input" /></label>
+          <label class="field"><span>最大内存 (MB)</span><input id="setMemory" class="input" type="number" min="512" step="512" /></label>
+          <div class="field-row">
+            <label class="field"><span>窗口宽</span><input id="setWidth" class="input" type="number" /></label>
+            <label class="field"><span>窗口高</span><input id="setHeight" class="input" type="number" /></label>
+            <label class="check"><input type="checkbox" id="setFullscreen" /> 全屏</label>
+          </div>
+        </div>
+        <div class="card">
+          <h2>下载</h2>
+          <label class="field">
+            <span>下载线路</span>
+            <select id="setSource" class="input">
+              <option value="cn">CDN 加速（BMCLAPI）→ 官方回退</option>
+              <option value="global">官方优先 → CDN 回退</option>
+              <option value="official">仅官方源</option>
+            </select>
+          </label>
+          <label class="field"><span>CurseForge API Key</span><input id="setCfKey" class="input" placeholder="可选，CurseForge 搜索/下载需要" /></label>
+        </div>
+        <div class="card">
+          <h2>Java</h2>
+          <label class="field"><span>指定 java.exe（留空自动选择）</span><input id="setJavaPath" class="input" /></label>
+          <button class="btn ghost" id="scanJava">扫描本机 Java</button>
+          <div id="javaList" class="java-list"></div>
+        </div>
+        <button class="btn primary" id="saveSettings">保存设置</button>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <span id="statusText">就绪</span>
+      <span class="spacer"></span>
+      <span id="statusSource">线路: BMCLAPI</span>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

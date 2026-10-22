@@ -1,0 +1,39 @@
+[package]
+name = "pcl-rs-app"
+version = "0.1.0"
+description = "PCL-RS desktop launcher (Tauri shell)"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/mc-githu/pcl-rs"
+rust-version = "1.85"
+
+# Standalone workspace: the desktop shell is not built by `cargo build` at the
+# repository root, because it needs the platform webview toolchain.
+[workspace]
+
+[lib]
+name = "pcl_rs_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "sync", "time", "io-util"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+
+pcl-core = { path = "../crates/core", version = "0.1.0" }
+pcl-net = { path = "../crates/net", version = "0.1.0" }
+pcl-auth = { path = "../crates/auth", version = "0.1.0" }
+pcl-install = { path = "../crates/install", version = "0.1.0" }
+pcl-launch = { path = "../crates/launch", version = "0.1.0" }
+pcl-mods = { path = "../crates/mods", version = "0.1.0" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,15 @@
+[package]
+name = "pcl-core"
+description = "Core domain models for the PCL-RS Minecraft launcher (version metadata, rules, maven, paths)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+sha1 = { workspace = true }
+hex = { workspace = true }
+md-5 = "0.10"

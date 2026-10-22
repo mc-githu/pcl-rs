@@ -1,0 +1,25 @@
+# Rust / Cargo
+/target
+**/target
+
+# Tauri
+src-tauri/gen
+
+# 构建产物
+*.pdb
+*.exe
+*.msi
+*.nsis.zip
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地调试
+*.log
+/tmp
+/tools

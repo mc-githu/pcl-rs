@@ -1,0 +1,25 @@
+[package]
+name = "pcl-cli"
+description = "The pcl command line launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "pcl"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde_json = { workspace = true }
+pcl-core = { workspace = true }
+pcl-net = { workspace = true }
+pcl-auth = { workspace = true }
+pcl-install = { workspace = true }
+pcl-launch = { workspace = true }
+pcl-mods = { workspace = true }
