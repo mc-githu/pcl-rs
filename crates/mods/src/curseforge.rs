@@ -56,24 +56,29 @@ impl CurseForge {
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResults> {
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        params.append_pair("gameId", &GAME_ID.to_string());
-        params.append_pair("classId", &CLASS_MODS.to_string());
-        params.append_pair("searchFilter", &query.text);
-        params.append_pair("index", &query.offset.to_string());
-        params.append_pair("pageSize", &query.limit.clamp(1, 50).to_string());
-        params.append_pair("sortField", "2");
-        params.append_pair("sortOrder", "desc");
-        if let Some(version) = &query.game_version {
-            params.append_pair("gameVersion", version);
-        }
-        if let Some(loader) = query.loader {
-            if loader != Loader::Vanilla {
-                params.append_pair("modLoaderType", &loader.curseforge_id().to_string());
+        // The query string is built in its own scope: `form_urlencoded::Serializer`
+        // is not `Sync`, so holding it across an `.await` would make the returned
+        // future non-`Send` (fatal for Tauri commands).
+        let url = {
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            params.append_pair("gameId", &GAME_ID.to_string());
+            params.append_pair("classId", &CLASS_MODS.to_string());
+            params.append_pair("searchFilter", &query.text);
+            params.append_pair("index", &query.offset.to_string());
+            params.append_pair("pageSize", &query.limit.clamp(1, 50).to_string());
+            params.append_pair("sortField", "2");
+            params.append_pair("sortOrder", "desc");
+            if let Some(version) = &query.game_version {
+                params.append_pair("gameVersion", version);
             }
-        }
+            if let Some(loader) = query.loader {
+                if loader != Loader::Vanilla {
+                    params.append_pair("modLoaderType", &loader.curseforge_id().to_string());
+                }
+            }
+            format!("{CURSEFORGE_API}/mods/search?{}", params.finish())
+        };
 
-        let url = format!("{CURSEFORGE_API}/mods/search?{}", params.finish());
         let response: Paginated<Vec<ModResponse>> = self.get(&url).await?;
 
         Ok(SearchResults {
@@ -96,19 +101,21 @@ impl CurseForge {
         game_version: Option<&str>,
         loader: Option<Loader>,
     ) -> Result<Vec<ModFile>> {
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        params.append_pair("index", "0");
-        params.append_pair("pageSize", "50");
-        if let Some(version) = game_version {
-            params.append_pair("gameVersion", version);
-        }
-        if let Some(loader) = loader {
-            if loader != Loader::Vanilla {
-                params.append_pair("modLoaderType", &loader.curseforge_id().to_string());
+        let url = {
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            params.append_pair("index", "0");
+            params.append_pair("pageSize", "50");
+            if let Some(version) = game_version {
+                params.append_pair("gameVersion", version);
             }
-        }
+            if let Some(loader) = loader {
+                if loader != Loader::Vanilla {
+                    params.append_pair("modLoaderType", &loader.curseforge_id().to_string());
+                }
+            }
+            format!("{CURSEFORGE_API}/mods/{mod_id}/files?{}", params.finish())
+        };
 
-        let url = format!("{CURSEFORGE_API}/mods/{mod_id}/files?{}", params.finish());
         let response: Wrapper<Vec<FileResponse>> = self.get(&url).await?;
 
         Ok(response

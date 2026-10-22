@@ -19,22 +19,25 @@ impl Modrinth {
     }
 
     pub async fn search(&self, query: &SearchQuery) -> Result<SearchResults> {
-        let mut facets: Vec<Vec<String>> = vec![vec!["project_type:mod".to_string()]];
-        if let Some(loader) = query.loader {
-            facets.push(vec![format!("categories:{}", loader.as_str())]);
-        }
-        if let Some(version) = &query.game_version {
-            facets.push(vec![format!("versions:{version}")]);
-        }
+        // Scoped so the non-`Sync` query serializer never lives across an `.await`.
+        let url = {
+            let mut facets: Vec<Vec<String>> = vec![vec!["project_type:mod".to_string()]];
+            if let Some(loader) = query.loader {
+                facets.push(vec![format!("categories:{}", loader.as_str())]);
+            }
+            if let Some(version) = &query.game_version {
+                facets.push(vec![format!("versions:{version}")]);
+            }
 
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        params.append_pair("query", &query.text);
-        params.append_pair("limit", &query.limit.clamp(1, 100).to_string());
-        params.append_pair("offset", &query.offset.to_string());
-        params.append_pair("index", "relevance");
-        params.append_pair("facets", &serde_json::to_string(&facets)?);
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            params.append_pair("query", &query.text);
+            params.append_pair("limit", &query.limit.clamp(1, 100).to_string());
+            params.append_pair("offset", &query.offset.to_string());
+            params.append_pair("index", "relevance");
+            params.append_pair("facets", &serde_json::to_string(&facets)?);
+            format!("{MODRINTH_API}/search?{}", params.finish())
+        };
 
-        let url = format!("{MODRINTH_API}/search?{}", params.finish());
         let response: SearchResponse = self.client.get_json(&url).await.context("Modrinth search")?;
 
         Ok(SearchResults {
@@ -86,19 +89,21 @@ impl Modrinth {
         game_version: Option<&str>,
         loader: Option<Loader>,
     ) -> Result<Vec<ModFile>> {
-        let mut params = url::form_urlencoded::Serializer::new(String::new());
-        if let Some(version) = game_version {
-            params.append_pair("game_versions", &serde_json::to_string(&[version])?);
-        }
-        if let Some(loader) = loader {
-            params.append_pair("loaders", &serde_json::to_string(&[loader.as_str()])?);
-        }
+        let url = {
+            let mut params = url::form_urlencoded::Serializer::new(String::new());
+            if let Some(version) = game_version {
+                params.append_pair("game_versions", &serde_json::to_string(&[version])?);
+            }
+            if let Some(loader) = loader {
+                params.append_pair("loaders", &serde_json::to_string(&[loader.as_str()])?);
+            }
 
-        let query = params.finish();
-        let url = if query.is_empty() {
-            format!("{MODRINTH_API}/project/{project}/version")
-        } else {
-            format!("{MODRINTH_API}/project/{project}/version?{query}")
+            let query = params.finish();
+            if query.is_empty() {
+                format!("{MODRINTH_API}/project/{project}/version")
+            } else {
+                format!("{MODRINTH_API}/project/{project}/version?{query}")
+            }
         };
 
         let versions: Vec<VersionResponse> = self
